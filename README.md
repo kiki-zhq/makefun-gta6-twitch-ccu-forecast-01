@@ -37,10 +37,10 @@ contest's own log-scale pinball loss:
 | persistence baseline (house baseline) | 0.930 |
 | this model, all comparables pooled | 0.714 |
 | this model, unlock-group matched | 0.682 |
-| this model, rolling group only (rolling targets) | **0.328** |
+| this model, rolling group only (rolling targets) | **0.3205** |
 
 The house baseline's published practice loss is 0.387; this model scores
-0.328 on rolling launches, the class GTA VI belongs to (rolling midnight
+0.3205 on rolling launches, the class GTA VI belongs to (rolling midnight
 local unlock, console-only, single-player). Its 90% interval covers 89.9%
 of held-out hours, against the 90% nominal.
 

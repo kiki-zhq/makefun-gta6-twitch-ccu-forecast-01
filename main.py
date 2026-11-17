@@ -17,14 +17,19 @@ from the comparables in its own group only: mixing groups biases the shape
 (a simultaneous unlock's hour 1 is nearly empty, so its ratios explode to
 100x; pooling them lifts the median far above a rolling launch's curve).
 
-For each hour, the log-ratios across the group's launches give a median and a
-standard deviation. Both are smoothed across neighbouring hours (centred
-3-hour moving average), then the forecast is lognormal:
+For each hour, the log-ratios across the group's launches give a mean and a
+standard deviation. The mean is used as the centre rather than the median:
+with only ~11-16 launches in a group the median is a single order statistic
+and noisy, while the mean uses every launch; under the lognormal model the
+log-ratios are approximately normal, so the two estimate the same centre and
+the mean has the lower variance (leave-one-out: 0.3205 vs 0.3278 for the
+median). Both are smoothed across neighbouring hours (centred 3-hour moving
+average), then the forecast is lognormal:
 
-    q_tau(h) = p1 * exp(median_h + z_tau * sd_h)
+    q_tau(h) = p1 * exp(centre_h + z_tau * sd_h)
 
 where p1 is the case's hour-1 print and z_tau is the standard normal quantile
-at the case's level. The median is the same for every level, so the pinball
+at the case's level. The centre is the same for every level, so the pinball
 loss is driven by the shape; the spread is the group's own observed spread,
 which is what calibrates the outer quantiles.
 
@@ -33,9 +38,9 @@ with the contest's own log-scale pinball loss):
   - persistence baseline (the house baseline): 0.930
   - this model, all comparables pooled:    0.714
   - this model, unlock-group matched:      0.682
-  - this model, rolling group only:        0.328  (rolling targets)
+  - this model, rolling group only:        0.3205 (rolling targets)
   The house baseline's published practice loss is 0.387; this model scores
-  0.328 on rolling launches, the class GTA VI belongs to.
+  0.3205 on rolling launches, the class GTA VI belongs to.
 
 How the grader runs it: `python3 -P -s /bot/main.py` (PYTHONHASHSEED=0) in
 python:3.13-slim, standard library only: no network, no pip packages.
@@ -195,15 +200,6 @@ def smooth(values, window=3):
     return out
 
 
-def median(values):
-    ordered = sorted(values)
-    n = len(ordered)
-    mid = n // 2
-    if n % 2:
-        return ordered[mid]
-    return (ordered[mid - 1] + ordered[mid]) / 2
-
-
 def forecast_case(case, name):
     levels = list(case["levels"])
     z_scores = [norm_ppf(level) for level in levels]
@@ -229,28 +225,30 @@ def forecast_case(case, name):
         raise ValueError(f"{name} has no usable comparables")
 
     hours_to_forecast = [row["hour"] for row in case["forecast"]]
-    # The log-ratio median and spread at every hour 2..24, smoothed across
+    # The log-ratio centre and spread at every hour 2..24, smoothed across
     # neighbouring hours so a 12-launch group's noise does not jag the curve.
-    medians = []
+    # The centre is the mean of the log-ratios (see the module docstring for
+    # why the mean, not the median).
+    centres = []
     spreads = []
     for hour in range(2, 25):
         logs = [math.log(hours[hour] / hours[1]) for hours in refs if hour in hours]
         if not logs:
             logs = [0.0]
-        medians.append(median(logs))
         mean = sum(logs) / len(logs)
+        centres.append(mean)
         spreads.append(math.sqrt(sum((x - mean) ** 2 for x in logs) / len(logs)))
-    medians = smooth(medians, 3)
+    centres = smooth(centres, 3)
     spreads = smooth(spreads, 3)
-    by_hour = {hour: (medians[hour - 2], spreads[hour - 2]) for hour in range(2, 25)}
+    by_hour = {hour: (centres[hour - 2], spreads[hour - 2]) for hour in range(2, 25)}
 
     rows = []
     for hour in sorted(hours_to_forecast):
-        med, sd = by_hour[hour]
+        centre, sd = by_hour[hour]
         quantiles = []
         prev = 0.0
         for z in z_scores:
-            q = p1 * math.exp(med + z * sd)
+            q = p1 * math.exp(centre + z * sd)
             q = min(max(q, 1.0), 1e9)
             q = round2(q)
             # Rounding must not break the non-decreasing order.
